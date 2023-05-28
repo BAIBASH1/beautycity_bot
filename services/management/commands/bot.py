@@ -21,6 +21,7 @@ TG_TOKEN = os.environ['TG_BOT_TOKEN']
 is_phone_handler_registered = False
 is_name_registered = False
 PAYMENTS_TOKEN = os.environ['PAYMENTS_TOKEN']
+
 IMAGES_URL = os.environ['IMAGES_URL']
 
 
@@ -329,7 +330,8 @@ class BOT:
 
             if call.data.startswith('procedure'):
                 call_back = 'salon'
-                RECORD_INF['procedure'] = call.data
+                if call.data != 'procedure':
+                     RECORD_INF['procedure'] = call.data
                 print(RECORD_INF)
                 markup = get_calendar(call_back)
                 text = f'Выберите дату'
@@ -358,7 +360,9 @@ class BOT:
 
             if call.data.startswith('day'):
                 call_back = 'procedure'
-                RECORD_INF['day'] = call.data
+                if call.data != 'day':
+                     RECORD_INF['day'] = call.data
+                print(RECORD_INF)
                 markup = get_work_times(0, call_back)
                 text = f'Выберите время'
                 replace_message(call, text, bot, markup)
@@ -382,7 +386,8 @@ class BOT:
             if call.data.startswith('time'):
                 markup = types.InlineKeyboardMarkup()
                 markup.row(types.InlineKeyboardButton('Назад', callback_data='day'))
-                RECORD_INF['time'] = call.data
+                if call.data != 'time':
+                     RECORD_INF['time'] = call.data
                 bot.send_message(
                     call.message.chat.id,
                     'Если все верно, напишите номер телефона, учтите, написав, вы соглашаетесь с обработкой персональных данных: \n Предоставляя свои персональные данные Покупатель даёт согласие на обработку, хранение и использование своих персональных данных на основании ФЗ № 152-ФЗ «О персональных данных» от 27.07.2006 г.',
@@ -397,9 +402,7 @@ class BOT:
                 bot.register_next_step_handler(call.message, process_phone_number)
 
             if call.data.startswith('yes_phone'):
-                call_back = 'time'
                 markup = types.InlineKeyboardMarkup()
-                markup.row(types.InlineKeyboardButton('Назад', callback_data=call_back))
                 RECORD_INF['phone_number'] = call.data.split('_')[2]
                 bot.send_message(call.message.chat.id, 'Как к вам обращаться?', reply_markup=markup)
                 global is_name_registered
