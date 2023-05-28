@@ -1,2 +1,1 @@
-# BeautyCity_bot_GM
- 
+## BeautyCity_bot_GM
