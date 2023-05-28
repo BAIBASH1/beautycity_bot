@@ -41,28 +41,38 @@ def get_order_info(record):
 #  'procedure': 'procedure', 'day': 'day__29 May 2023',
 #  'time': 'time__32', 'phone_number': '+79778108747', 'client_name': 'sss'}
 
-def get_calendar(call_back, month=None):
-    markup = types.InlineKeyboardMarkup(row_width=7)
+def get_calendar(call_back, start_line_num):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    start_line_num = int(start_line_num)
+    all_dates = dataset.get__dates(RECORD_INF['inf_about_master_or_salon'])
+    uniq_dates = []
+    for date in all_dates:
+        if date not in uniq_dates:
+            uniq_dates.append(date)
+    dates = uniq_dates[start_line_num:start_line_num+10]
+    print(dates)
 
-    now = datetime.datetime.now()
-    if month is None:
-        month = now.month
 
-    # Создаем кнопки для переключения месяцев
-    prev_month_button = types.InlineKeyboardButton(text="◀️", callback_data=f'prev_month_{month}')
-    next_month_button = types.InlineKeyboardButton(text="▶️", callback_data=f'next_month_{month}')
+    # now = datetime.datetime.now()
+    # if month is None:
+    #     month = now.month
+    #
+    # # Создаем кнопки для переключения месяцев
+    prev_month_button = types.InlineKeyboardButton(text="◀️", callback_data=f'prev_month_{start_line_num-10}')
+    next_month_button = types.InlineKeyboardButton(text="▶️", callback_data=f'next_month_{start_line_num+10}')
     markup.row(prev_month_button, next_month_button)
+    #
+    # # Создаем заголовок с названием месяца и годом
+    # month_year_text = calendar.month_name[month] + " " + str(now.year)
+    # header_button = types.InlineKeyboardButton(text=month_year_text, callback_data=f'month_{month}')
+    # markup.add(header_button)
 
-    # Создаем заголовок с названием месяца и годом
-    month_year_text = calendar.month_name[month] + " " + str(now.year)
-    header_button = types.InlineKeyboardButton(text=month_year_text, callback_data=f'month_{month}')
-    markup.add(header_button)
+    # # Создаем кнопки для дней месяца
+    # days_in_month = calendar.monthrange(now.year, month)[1]
 
-    # Создаем кнопки для дней месяца
-    days_in_month = calendar.monthrange(now.year, month)[1]
     day_buttons = []
-    for day in range(1, days_in_month + 1):
-        day_buttons.append(types.InlineKeyboardButton(text=str(day), callback_data=f'day__{day} {month_year_text}'))
+    for day in dates:
+        day_buttons.append(types.InlineKeyboardButton(text=str(day), callback_data=f'day__{day}'))
     markup.add(*day_buttons)
     markup.row(types.InlineKeyboardButton(text='Назад', callback_data=call_back))
     return markup
@@ -128,27 +138,21 @@ def get_list_procedures(start_line_num: int, call_back):
     return markup
 
 
-def get_work_times(start_line_num, call_back):
+def get_work_times(start_line_num, call_back, call):
     global RECORD_INF
     salon, master = None, None
-    today = datetime.datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
-    day = today
     try:
         master_or_salon = RECORD_INF['inf_about_master_or_salon'].split('__')
         if len(master_or_salon) > 1 and master_or_salon[0] == 'master':
             master = get_object_or_404(Employee, pk=master_or_salon[1])
         elif len(master_or_salon) > 1 and master_or_salon[0] == 'salon':
             salon = get_object_or_404(Salon, pk=master_or_salon[1])
-
-        date_id = RECORD_INF['day'].split('__')
-        if len(date_id) > 1 and date_id[0] == 'day':
-            day = datetime.datetime.strptime(date_id[1], '%d %B %Y')
-            day = datetime.datetime(day.year, day.month, day.day, 0, 0, 1,  tzinfo=utc)
     except KeyError or Http404 or IndexError or ValueError:
         pass
 
+
     start_line_num = int(start_line_num)
-    day_times = dataset.get_schedule(day, salon=salon, master=master)
+    day_times = dataset.get_schedule(strday=call.data.split('__')[1], salon=salon, master=master)
 
     if len(day_times) > start_line_num + 12:
         day_times = day_times[start_line_num:start_line_num + 12]
@@ -333,15 +337,13 @@ class BOT:
                 if call.data != 'procedure':
                      RECORD_INF['procedure'] = call.data
                 print(RECORD_INF)
-                markup = get_calendar(call_back)
+                markup = get_calendar(call_back, 0)
                 text = f'Выберите дату'
                 replace_message(call, text, bot, markup)
 
             if call.data.startswith('prev_month'):
                 call_back = 'salon'
-                current_month = int(call.data.split('_')[2])
-                prev_month = current_month - 1 if current_month > 1 else 12
-                markup = get_calendar(call_back, prev_month)
+                markup = get_calendar(call_back, call.data.split('_')[2])
                 bot.edit_message_reply_markup(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -349,9 +351,7 @@ class BOT:
                 )
             if call.data.startswith('next_month'):
                 call_back = 'salon'
-                current_month = int(call.data.split('_')[2])
-                next_month = current_month + 1 if current_month < 12 else 1
-                markup = get_calendar(call_back, next_month)
+                markup = get_calendar(call_back, call.data.split('_')[2])
                 bot.edit_message_reply_markup(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -363,12 +363,12 @@ class BOT:
                 if call.data != 'day':
                      RECORD_INF['day'] = call.data
                 print(RECORD_INF)
-                markup = get_work_times(0, call_back)
+                markup = get_work_times(0, call_back, call)
                 text = f'Выберите время'
                 replace_message(call, text, bot, markup)
             if call.data.startswith('prev_times'):
                 call_back = 'procedure'
-                markup = get_work_times(call.data.split('_')[2], call_back)
+                markup = get_work_times(call.data.split('_')[2], call_back, call)
                 bot.edit_message_reply_markup(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -376,7 +376,7 @@ class BOT:
                 )
             if call.data.startswith('next_times'):
                 call_back = 'procedure'
-                markup = get_work_times(call.data.split('_')[2], call_back)
+                markup = get_work_times(call.data.split('_')[2], call_back, call)
                 bot.edit_message_reply_markup(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
