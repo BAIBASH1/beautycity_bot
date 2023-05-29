@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from services.models import Employee, Salon, Schedule
+from services.models import Employee, Salon, Schedule, Procedure
 from django.shortcuts import get_object_or_404
 from django.http import Http404
 import calendar
@@ -21,7 +21,6 @@ TG_TOKEN = os.environ['TG_BOT_TOKEN']
 is_phone_handler_registered = False
 is_name_registered = False
 PAYMENTS_TOKEN = os.environ['PAYMENTS_TOKEN']
-
 IMAGES_URL = os.environ['IMAGES_URL']
 
 
@@ -31,48 +30,45 @@ bot = telebot.TeleBot(token)
 
 
 def get_order_info(record):
+    # print(record)
     dataset.make_order(record)
     sch_time = record['time'].split('__')
     schedule = Schedule.objects.filter(pk=sch_time[1]).first()
-    return f'{schedule.salon}, {schedule.datetime}, {schedule.employee.name}'
+    return f'салон: {schedule.salon}, {schedule.datetime}, мастер: {schedule.employee.name}'
 
 
-# {'inf_about_master_or_salon': 'salon__2',
-#  'procedure': 'procedure', 'day': 'day__29 May 2023',
-#  'time': 'time__32', 'phone_number': '+79778108747', 'client_name': 'sss'}
-
-def get_calendar(call_back, start_line_num):
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    start_line_num = int(start_line_num)
-    all_dates = dataset.get__dates(RECORD_INF['inf_about_master_or_salon'])
-    uniq_dates = []
-    for date in all_dates:
-        if date not in uniq_dates:
-            uniq_dates.append(date)
-    dates = uniq_dates[start_line_num:start_line_num+10]
-    print(dates)
+def get_procedure_info(record):
+    print(f'get_procedure_info {record}')
+    try:
+        procedure_id = record['procedure'].split('__')[1]
+    except KeyError:
+        procedure_id = 3
+    procedure = Procedure.objects.filter(pk=procedure_id).first()
+    return {'name': procedure.name, 'cost': procedure.cost}
 
 
-    # now = datetime.datetime.now()
-    # if month is None:
-    #     month = now.month
-    #
-    # # Создаем кнопки для переключения месяцев
-    prev_month_button = types.InlineKeyboardButton(text="◀️", callback_data=f'prev_month_{start_line_num-10}')
-    next_month_button = types.InlineKeyboardButton(text="▶️", callback_data=f'next_month_{start_line_num+10}')
+def get_calendar(call_back, month=None):
+    markup = types.InlineKeyboardMarkup(row_width=7)
+
+    now = datetime.datetime.now()
+    if month is None:
+        month = now.month
+
+    # Создаем кнопки для переключения месяцев
+    prev_month_button = types.InlineKeyboardButton(text="◀️", callback_data=f'prev_month_{month}')
+    next_month_button = types.InlineKeyboardButton(text="▶️", callback_data=f'next_month_{month}')
     markup.row(prev_month_button, next_month_button)
-    #
-    # # Создаем заголовок с названием месяца и годом
-    # month_year_text = calendar.month_name[month] + " " + str(now.year)
-    # header_button = types.InlineKeyboardButton(text=month_year_text, callback_data=f'month_{month}')
-    # markup.add(header_button)
 
-    # # Создаем кнопки для дней месяца
-    # days_in_month = calendar.monthrange(now.year, month)[1]
+    # Создаем заголовок с названием месяца и годом
+    month_year_text = calendar.month_name[month] + " " + str(now.year)
+    header_button = types.InlineKeyboardButton(text=month_year_text, callback_data=f'month_{month}')
+    markup.add(header_button)
 
+    # Создаем кнопки для дней месяца
+    days_in_month = calendar.monthrange(now.year, month)[1]
     day_buttons = []
-    for day in dates:
-        day_buttons.append(types.InlineKeyboardButton(text=str(day), callback_data=f'day__{day}'))
+    for day in range(1, days_in_month + 1):
+        day_buttons.append(types.InlineKeyboardButton(text=str(day), callback_data=f'day__{day} {month_year_text}'))
     markup.add(*day_buttons)
     markup.row(types.InlineKeyboardButton(text='Назад', callback_data=call_back))
     return markup
@@ -134,25 +130,32 @@ def get_list_procedures(start_line_num: int, call_back):
         callback_data=f'next_procedures_{start_line_num + 10}'
     )
     markup.row(prev_procedures_button, next_procedures_button)
-    markup.row(types.InlineKeyboardButton('Назад', callback_data=call_back))
+    button_back = types.InlineKeyboardButton('Назад', callback_data=call_back)
+    markup.row(button_back)
     return markup
 
 
-def get_work_times(start_line_num, call_back, call):
+def get_work_times(start_line_num, call_back):
     global RECORD_INF
     salon, master = None, None
+    today = datetime.datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
+    day = today
     try:
         master_or_salon = RECORD_INF['inf_about_master_or_salon'].split('__')
         if len(master_or_salon) > 1 and master_or_salon[0] == 'master':
             master = get_object_or_404(Employee, pk=master_or_salon[1])
         elif len(master_or_salon) > 1 and master_or_salon[0] == 'salon':
             salon = get_object_or_404(Salon, pk=master_or_salon[1])
+
+        date_id = RECORD_INF['day'].split('__')
+        if len(date_id) > 1 and date_id[0] == 'day':
+            day = datetime.datetime.strptime(date_id[1], '%d %B %Y')
+            day = datetime.datetime(day.year, day.month, day.day, 0, 0, 1,  tzinfo=utc)
     except KeyError or Http404 or IndexError or ValueError:
         pass
 
-
     start_line_num = int(start_line_num)
-    day_times = dataset.get_schedule(strday=call.data.split('__')[1], salon=salon, master=master)
+    day_times = dataset.get_schedule(day, salon=salon, master=master)
 
     if len(day_times) > start_line_num + 12:
         day_times = day_times[start_line_num:start_line_num + 12]
@@ -231,12 +234,37 @@ class BOT:
 
         @bot.callback_query_handler(func=lambda call: True)
         def handle_callback(call):
+            global RECORD_INF
+            if call.data.startswith('start_payment_tips'):
+                print(RECORD_INF, 'start_payment_tips')
+                procedure = get_procedure_info(RECORD_INF)
+                amount = int(procedure['cost'])
+                tips = amount * 0.1
+                print(f'Услуги салона {procedure["name"]}', amount*100)
+                price = []
+                price.append(LabeledPrice(label=f'Услуги салона {procedure["name"]}', amount=amount*100))
+                price.append(LabeledPrice(label=f'Чаевые ', amount=round(tips * 100)))
+                bot.send_invoice(
+                    call.message.chat.id,
+                    'Оплата услуг салона',
+                    'Вы можете оплатить услуги на месте!',
+                    'HAPPY FRIDAYS COUPON',
+                    provider_token,
+                    'rub',
+                    prices=price,
+                    photo_url='',
+                    photo_height=512,
+                    photo_width=512,
+                    photo_size=512,
+                    is_flexible=False,
+                    start_parameter='service-example')
 
             if call.data.startswith('start_payment_buy'):
-                amount = 100
-                procedure = 'hair dressed'
+                procedure = get_procedure_info(RECORD_INF)
+                amount = int(procedure['cost'])
+                print(f'Услуги салона {procedure["name"]}', amount*100)
                 price = []
-                price.append(LabeledPrice(label=f'Услуги салона {procedure}', amount=amount*100))
+                price.append(LabeledPrice(label=f'Услуги салона {procedure["name"]}', amount=amount*100))
                 bot.send_invoice(
                     call.message.chat.id,
                     'Оплата услуг салона',
@@ -253,13 +281,11 @@ class BOT:
                     start_parameter='service-example')
 
             if call.data == 'record':
-                global RECORD_INF
                 RECORD_INF = {}
                 keyboard = types.InlineKeyboardMarkup()
                 button_master = types.InlineKeyboardButton(text='Выбрать мастера', callback_data='select_master')
                 button_salon = types.InlineKeyboardButton(text='Выбор салона', callback_data='select_salon')
-                button_pyment = types.InlineKeyboardButton(text='Оплатить', callback_data='start_payment_buy')
-                keyboard.add(button_master, button_salon, button_pyment)
+                keyboard.add(button_master, button_salon)
                 bot.edit_message_text(
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
                     text='Супер, начнем запись!', reply_markup=keyboard
@@ -334,16 +360,17 @@ class BOT:
 
             if call.data.startswith('procedure'):
                 call_back = 'salon'
-                if call.data != 'procedure':
-                     RECORD_INF['procedure'] = call.data
-                print(RECORD_INF)
-                markup = get_calendar(call_back, 0)
+                RECORD_INF['procedure'] = call.data
+                print('str 360', RECORD_INF)
+                markup = get_calendar(call_back)
                 text = f'Выберите дату'
                 replace_message(call, text, bot, markup)
 
             if call.data.startswith('prev_month'):
                 call_back = 'salon'
-                markup = get_calendar(call_back, call.data.split('_')[2])
+                current_month = int(call.data.split('_')[2])
+                prev_month = current_month - 1 if current_month > 1 else 12
+                markup = get_calendar(call_back, prev_month)
                 bot.edit_message_reply_markup(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -351,7 +378,9 @@ class BOT:
                 )
             if call.data.startswith('next_month'):
                 call_back = 'salon'
-                markup = get_calendar(call_back, call.data.split('_')[2])
+                current_month = int(call.data.split('_')[2])
+                next_month = current_month + 1 if current_month < 12 else 1
+                markup = get_calendar(call_back, next_month)
                 bot.edit_message_reply_markup(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -360,15 +389,14 @@ class BOT:
 
             if call.data.startswith('day'):
                 call_back = 'procedure'
-                if call.data != 'day':
-                     RECORD_INF['day'] = call.data
-                print(RECORD_INF)
-                markup = get_work_times(0, call_back, call)
+                RECORD_INF['day'] = call.data
+                markup = get_work_times(0, call_back)
                 text = f'Выберите время'
                 replace_message(call, text, bot, markup)
+
             if call.data.startswith('prev_times'):
                 call_back = 'procedure'
-                markup = get_work_times(call.data.split('_')[2], call_back, call)
+                markup = get_work_times(call.data.split('_')[2], call_back)
                 bot.edit_message_reply_markup(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -376,7 +404,7 @@ class BOT:
                 )
             if call.data.startswith('next_times'):
                 call_back = 'procedure'
-                markup = get_work_times(call.data.split('_')[2], call_back, call)
+                markup = get_work_times(call.data.split('_')[2], call_back)
                 bot.edit_message_reply_markup(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -386,8 +414,7 @@ class BOT:
             if call.data.startswith('time'):
                 markup = types.InlineKeyboardMarkup()
                 markup.row(types.InlineKeyboardButton('Назад', callback_data='day'))
-                if call.data != 'time':
-                     RECORD_INF['time'] = call.data
+                RECORD_INF['time'] = call.data
                 bot.send_message(
                     call.message.chat.id,
                     'Если все верно, напишите номер телефона, учтите, написав, вы соглашаетесь с обработкой персональных данных: \n Предоставляя свои персональные данные Покупатель даёт согласие на обработку, хранение и использование своих персональных данных на основании ФЗ № 152-ФЗ «О персональных данных» от 27.07.2006 г.',
@@ -402,7 +429,9 @@ class BOT:
                 bot.register_next_step_handler(call.message, process_phone_number)
 
             if call.data.startswith('yes_phone'):
+                call_back = 'time'
                 markup = types.InlineKeyboardMarkup()
+                markup.row(types.InlineKeyboardButton('Назад', callback_data=call_back))
                 RECORD_INF['phone_number'] = call.data.split('_')[2]
                 bot.send_message(call.message.chat.id, 'Как к вам обращаться?', reply_markup=markup)
                 global is_name_registered
@@ -410,14 +439,12 @@ class BOT:
                     bot.register_next_step_handler(call.message, process_name)
                     is_name_registered = True
 
-                # if call.data.startswith('enter_name'):
-                #     call_back = 'time'
-                #     markup = types.InlineKeyboardMarkup()
-                #     markup.row(types.InlineKeyboardButton('Назад', callback_data=call_back))
-                #     RECORD_INF['client_name'] = call.data.split('_')[2]
+
 
         def process_phone_number(message):
-            phone_number = message.text
+            phone_number = message.text.strip()
+            if len(phone_number) <= 10:
+                phone_number = f'+7{phone_number}'
             bot.send_message(message.chat.id, f"Ваш номер телефона: {phone_number}")
             markup = get_buttons_yes_no(phone_number)
             bot.send_message(message.chat.id, "Верно?", reply_markup=markup)
@@ -428,7 +455,12 @@ class BOT:
             name = message.text
             RECORD_INF['client_name'] = name
             bot.send_message(message.chat.id, f"Приятно познакомиться, {name}")
-            bot.send_message(message.chat.id, f"Ваша запись {get_order_info(RECORD_INF)} \n до встречи")
+            markup = types.InlineKeyboardMarkup()
+            button_pyment = types.InlineKeyboardButton(text='Оплатить', callback_data='start_payment_buy')
+            button_tips = types.InlineKeyboardButton(text='Оплатить с чаевыми (10%)',
+                                                     callback_data='start_payment_tips')
+            markup.row(button_pyment, button_tips)
+            bot.send_message(message.chat.id, f"Ваша запись {get_order_info(RECORD_INF)} \n до встречи", reply_markup=markup)
             global is_name_registered
             is_name_registered = False
 

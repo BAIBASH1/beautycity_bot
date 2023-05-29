@@ -58,8 +58,7 @@ def get_salons():
     return salons
 
 
-def get_schedule(strday, salon=None, master=None, busy=False):
-    day = datetime.strptime(strday, '%d-%m-%Y')
+def get_schedule(day, salon=None, master=None, busy=False):
     start_time = datetime(day.year, day.month, day.day, 0, 0, 0, tzinfo=utc)
     end_time = datetime(day.year, day.month, day.day, 23, 59, 59, tzinfo=utc)
     schedules_query = Schedule.objects.filter(datetime__gte=start_time, datetime__lte=end_time, confirmation=busy)
@@ -123,20 +122,31 @@ def make_order(order_info, procedure=None):
     return order
 
 
-def get__dates(salon_or_master):
+def make_order(order_info, procedure=None):
     try:
-        master_or_salon = salon_or_master.split('__')
-        days = []
-        if len(master_or_salon) > 1 and master_or_salon[0] == 'master':
-            for date in Schedule.objects.filter(employee__id=master_or_salon[1]).values_list('datetime', flat=True):
-                days.append(date.strftime("%d-%m-%Y"))
-        elif len(master_or_salon) > 1 and master_or_salon[0] == 'salon':
-            for date in Schedule.objects.filter(salon__id=master_or_salon[1]).values_list('datetime', flat=True):
-                days.append(date.strftime("%d-%m-%Y"))
-    except KeyError or Http404 or IndexError or ValueError:
-        pass
-    return days
+        schedule_id = order_info['time'].split('__')[1]
+        phone_number = order_info['phone_number']
+        client_name = order_info['client_name']
+        procedure_id = order_info['procedure'].split('__')[1]
+    except KeyError or IndexError or ValueError:
+        return False
+
+    client, created = Client.objects.get_or_create(
+        name=client_name,
+        phone=phone_number,
+    )
+    client.save()
+
+    procedure = get_object_or_404(Procedure, pk=procedure_id)
+
+    order, created = Schedule.objects.update_or_create(
+        pk=schedule_id,
+        defaults={
+            'client': client,
+            'procedure': procedure,
+            'confirmation': True,
+        }
+    )
+    return order
 
 
-if __name__ == '__main__':
-    make_order()
