@@ -337,7 +337,8 @@ class BOT:
 
             if call.data.startswith('salon') or call.data.startswith('master'):
                 call_back = 'record'
-                RECORD_INF['inf_about_master_or_salon'] = call.data
+                if call.data != 'inf_about_master_or_salon':
+                     RECORD_INF['inf_about_master_or_salon'] = call.data
                 markup = get_list_procedures(0, call_back)
                 text = f'Выберите процеду'
                 replace_message(call, text, bot, markup)
@@ -360,7 +361,8 @@ class BOT:
 
             if call.data.startswith('procedure'):
                 call_back = 'salon'
-                RECORD_INF['procedure'] = call.data
+                if call.data != 'procedure':
+                    RECORD_INF['procedure'] = call.data
                 print('str 360', RECORD_INF)
                 markup = get_calendar(call_back)
                 text = f'Выберите дату'
@@ -389,7 +391,8 @@ class BOT:
 
             if call.data.startswith('day'):
                 call_back = 'procedure'
-                RECORD_INF['day'] = call.data
+                if call.data != 'day':
+                    RECORD_INF['day'] = call.data
                 markup = get_work_times(0, call_back)
                 text = f'Выберите время'
                 replace_message(call, text, bot, markup)
@@ -414,7 +417,8 @@ class BOT:
             if call.data.startswith('time'):
                 markup = types.InlineKeyboardMarkup()
                 markup.row(types.InlineKeyboardButton('Назад', callback_data='day'))
-                RECORD_INF['time'] = call.data
+                if call.data != 'time':
+                    RECORD_INF['time'] = call.data
                 bot.send_message(
                     call.message.chat.id,
                     'Если все верно, напишите номер телефона, учтите, написав, вы соглашаетесь с обработкой персональных данных: \n Предоставляя свои персональные данные Покупатель даёт согласие на обработку, хранение и использование своих персональных данных на основании ФЗ № 152-ФЗ «О персональных данных» от 27.07.2006 г.',
@@ -432,7 +436,8 @@ class BOT:
                 call_back = 'time'
                 markup = types.InlineKeyboardMarkup()
                 markup.row(types.InlineKeyboardButton('Назад', callback_data=call_back))
-                RECORD_INF['phone_number'] = call.data.split('_')[2]
+                if call.data != 'phone_number':
+                    RECORD_INF['phone_number'] = call.data.split('_')[2]
                 bot.send_message(call.message.chat.id, 'Как к вам обращаться?', reply_markup=markup)
                 global is_name_registered
                 if not is_name_registered:
